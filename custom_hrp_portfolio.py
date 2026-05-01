@@ -87,12 +87,16 @@ def fetch_moex_history(instr: MoexInstrument, start_date: str, end_date: str) ->
             f"{MOEX_BASE}/history/engines/stock/markets/{instr.market}"
             f"/boards/{instr.board}/securities/{instr.secid}.json"
         )
-        response = requests.get(
-            url,
-            params={"from": start_date, "till": end_date, "start": start},
-            timeout=30,
-        )
-        response.raise_for_status()
+        try:
+            response = requests.get(
+                url,
+                params={"from": start_date, "till": end_date, "start": start},
+                timeout=30,
+            )
+            response.raise_for_status()
+        except requests.RequestException as exc:
+            warnings.warn(f"MOEX request failed for {instr.name}: {exc}", stacklevel=1)
+            return pd.Series(dtype=float, name=instr.name)
         payload = response.json()
         block = payload.get("history", {})
         if not columns:
@@ -118,14 +122,18 @@ def fetch_moex_history(instr: MoexInstrument, start_date: str, end_date: str) ->
 
 
 def fetch_crypto_history(ticker: str, start_date: str, end_date: str) -> pd.Series:
-    hist = yf.download(
-        ticker,
-        start=start_date,
-        end=(pd.to_datetime(end_date) + pd.Timedelta(days=1)).strftime("%Y-%m-%d"),
-        auto_adjust=False,
-        progress=False,
-        interval="1d",
-    )
+    try:
+        hist = yf.download(
+            ticker,
+            start=start_date,
+            end=(pd.to_datetime(end_date) + pd.Timedelta(days=1)).strftime("%Y-%m-%d"),
+            auto_adjust=False,
+            progress=False,
+            interval="1d",
+        )
+    except Exception as exc:  # pragma: no cover
+        warnings.warn(f"yfinance request failed for {ticker}: {exc}", stacklevel=1)
+        return pd.Series(dtype=float, name=ticker)
     if hist.empty:
         return pd.Series(dtype=float, name=ticker)
     if isinstance(hist.columns, pd.MultiIndex):
@@ -213,7 +221,9 @@ def build_price_matrix(start_date: str, end_date: str) -> pd.DataFrame:
         moex_series[instr.name] = s
 
     if not moex_series:
-        raise RuntimeError("No MOEX data loaded. Check tickers/boards/market configuration.")
+        raise RuntimeError(
+            "No MOEX data loaded. Check network access to iss.moex.com and verify tickers/boards/market mapping."
+        )
 
     moex_df = pd.concat(moex_series.values(), axis=1).sort_index()
     moex_df.columns = list(moex_series.keys())
