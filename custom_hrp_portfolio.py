@@ -65,7 +65,8 @@ MOEX_FUNDS_BONDS: List[MoexInstrument] = [
 ]
 
 CRYPTO_MARKET_TICKERS = ["BTC-USD", "TAO-USD", "ETH-USD", "USDT-USD"]
-# Includes diagnostics-only queries (e.g., ДОМ.РФ) in addition to auto-substitution rules.
+# Includes diagnostics-only queries (e.g., ДОМ.РФ) without substitution rules,
+# so they are printed for manual review but not auto-applied.
 SEARCH_QUERIES = ["ПАРУС", "Рентал ПРО", "ДОМ.РФ"]
 AUTO_TICKER_RULES = {
     "PARUS-LOG": {"query": "ПАРУС", "preferred_boards": ["TQIF", "TQCB"]},
@@ -314,11 +315,11 @@ def build_price_matrix(
     crypto_df = pd.concat(crypto_series.values(), axis=1).sort_index()
     crypto_df.columns = list(crypto_series.keys())
     # Reindex crypto to MOEX dates.
-    crypto_on_moex = crypto_df.reindex(moex_calendar)
+    crypto_aligned = crypto_df.reindex(moex_calendar)
 
     # Forward-fill only carries last observed values to later dates and is used
     # to align infrequent/non-trading days before common-window trimming.
-    full_df = pd.concat([moex_df, crypto_on_moex], axis=1).sort_index().ffill()
+    full_df = pd.concat([moex_df, crypto_aligned], axis=1).sort_index().ffill()
     return full_df
 
 
@@ -335,7 +336,7 @@ def determine_common_window(prices: pd.DataFrame) -> pd.DataFrame:
     return trimmed
 
 
-def identify_short_history_assets(prices: pd.DataFrame, min_days: int = 126) -> List[str]:
+def identify_short_history_assets(prices: pd.DataFrame, min_days: int = MIN_HISTORY_DAYS) -> List[str]:
     short_assets: List[str] = []
     for col in prices.columns:
         obs = int(prices[col].dropna().shape[0])
