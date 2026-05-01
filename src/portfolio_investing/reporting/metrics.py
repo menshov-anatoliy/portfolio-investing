@@ -44,7 +44,8 @@ def compute_sharpe(
     portfolio_values : pd.Series
         Daily portfolio values.
     risk_free_rate : float
-        Annual risk-free rate (decimal).
+        Annual risk-free rate as a decimal (default 0.10 = 10%, appropriate for the
+        Russian market; adjust to your local risk-free benchmark).
 
     Returns
     -------
@@ -74,7 +75,8 @@ def compute_sortino(
     portfolio_values : pd.Series
         Daily portfolio values.
     risk_free_rate : float
-        Annual risk-free rate (decimal).
+        Annual risk-free rate as a decimal (default 0.10 = 10%, appropriate for the
+        Russian market; adjust to your local risk-free benchmark).
 
     Returns
     -------

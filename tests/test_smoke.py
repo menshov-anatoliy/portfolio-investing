@@ -68,7 +68,8 @@ class TestSmokeBacktest:
         pv = result["portfolio_values"]
         # prices -> returns loses 1 row; engine keeps (returns_len - min_periods + 1) rows
         min_periods = MINIMAL_CONFIG["correlation"]["min_periods"]
-        expected_len = len(PRICES) - min_periods  # = len(returns) - min_periods + 1
+        # prices -> returns loses 1 row (via dropna); engine emits (returns_len - min_periods + 1) values
+        expected_len = len(PRICES) - min_periods  # equivalent to len(returns) - min_periods + 1
         assert len(pv) == expected_len
 
     def test_no_nan_in_portfolio(self):
