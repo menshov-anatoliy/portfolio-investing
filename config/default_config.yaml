@@ -1,0 +1,66 @@
+tickers:
+  russian_stocks:
+    - SBERP.ME
+    - ZAYM.ME
+    - SIBN.ME
+    - BELU.ME
+    - TATNP.ME
+    - PLZL.ME
+    - DOMRF.ME
+    - PHOR.ME
+    - MOEX.ME
+    - MDMG.ME
+    - LKOH.ME
+  alternatives:
+    - PARUS-LOG.ME   # ПАРУС-ЛОГ - may be unavailable
+    - RENTAL-PRO.ME  # ЗПИФ Рентал ПРО - may be unavailable
+  crypto:
+    - BTC-USD
+    - TAO-USD
+    - ETH-USD
+  cash_like:
+    - USDT-USD
+
+backtest:
+  start_date: "2020-01-01"
+  end_date: "2024-12-31"
+
+correlation:
+  rolling_window: 126   # trading days
+  min_periods: 63       # minimum valid observations
+  shrinkage: true       # Ledoit-Wolf shrinkage
+
+clustering:
+  n_clusters_min: 3
+  n_clusters_max: 5
+  linkage: "ward"
+
+allocation:
+  methods:
+    - "equal_weight"
+    - "inverse_vol"
+    - "risk_parity"
+  intra_cluster: "equal_weight"   # or "inverse_vol"
+  max_weight_per_asset: 0.20
+  max_weight_per_cluster: 0.50
+
+rebalance:
+  modes:
+    - "monthly"
+    - "quarterly"
+    - "threshold"
+    - "hybrid_monthly"
+    - "hybrid_quarterly"
+  threshold_pct: 0.05    # 5% absolute deviation triggers rebalance
+
+costs:
+  commission_pct: 0.001  # 0.1% per trade
+  slippage_pct: 0.001    # 0.1% slippage
+
+constraints:
+  max_turnover_per_period: 0.30   # 30% max turnover
+  min_asset_weight: 0.0
+
+reporting:
+  output_dir: "output"
+  risk_free_rate: 0.10   # 10% annual (Russian market)
