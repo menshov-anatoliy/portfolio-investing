@@ -65,6 +65,7 @@ MOEX_FUNDS_BONDS: List[MoexInstrument] = [
 ]
 
 CRYPTO_MARKET_TICKERS = ["BTC-USD", "TAO-USD", "ETH-USD", "USDT-USD"]
+# Includes diagnostics-only queries (e.g., ДОМ.РФ) in addition to auto-substitution rules.
 SEARCH_QUERIES = ["ПАРУС", "Рентал ПРО", "ДОМ.РФ"]
 AUTO_TICKER_RULES = {
     "PARUS-LOG": {"query": "ПАРУС", "preferred_boards": ["TQIF", "TQCB"]},
@@ -214,7 +215,8 @@ def cap_weights(weights: pd.Series, max_weight: float) -> pd.Series:
 
 
 def correl_dist(corr: pd.DataFrame) -> pd.DataFrame:
-    # HRP angular distance transform: d(i,j) = sqrt((1-rho(i,j))/2).
+    # HRP angular distance transform: d(i,j) = sqrt((1-corr_ij)/2),
+    # where corr_ij is the pairwise correlation coefficient.
     corr = corr.clip(-1, 1)
     dist = np.sqrt(0.5 * (1 - corr))
     np.fill_diagonal(dist.values, 0.0)
@@ -333,7 +335,7 @@ def determine_common_window(prices: pd.DataFrame) -> pd.DataFrame:
     return trimmed
 
 
-def warn_short_history(prices: pd.DataFrame, min_days: int = 126) -> List[str]:
+def identify_short_history_assets(prices: pd.DataFrame, min_days: int = 126) -> List[str]:
     short_assets: List[str] = []
     for col in prices.columns:
         obs = int(prices[col].dropna().shape[0])
@@ -348,7 +350,7 @@ def warn_short_history(prices: pd.DataFrame, min_days: int = 126) -> List[str]:
 
 
 def exclude_short_history_assets(prices: pd.DataFrame, min_days: int) -> Tuple[pd.DataFrame, List[str]]:
-    short_assets = warn_short_history(prices, min_days=min_days)
+    short_assets = identify_short_history_assets(prices, min_days=min_days)
     if not short_assets:
         return prices, []
     filtered = prices.drop(columns=short_assets, errors="ignore")
@@ -463,7 +465,7 @@ def run(
     print(f"Common synchronized window: {prices.index.min().date()} .. {prices.index.max().date()}")
     print(f"Assets used ({len(prices.columns)}): {', '.join(prices.columns)}")
 
-    # HRP covariance is estimated on fully synchronous observations only.
+    # HRP covariance is estimated on complete observations with no missing values.
     log_returns = np.log(prices / prices.shift(1)).dropna(how="any")
     corr = log_returns.corr()
     cov = log_returns.cov()
