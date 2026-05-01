@@ -253,9 +253,8 @@ def build_price_matrix(start_date: str, end_date: str) -> pd.DataFrame:
 
     crypto_df = pd.concat(crypto_series.values(), axis=1).sort_index()
     crypto_df.columns = list(crypto_series.keys())
-    # Reindex crypto to MOEX dates and forward-fill with last known crypto close
-    # from prior calendar dates (no future data usage).
-    crypto_on_moex = crypto_df.reindex(moex_calendar).ffill()
+    # Reindex crypto to MOEX dates.
+    crypto_on_moex = crypto_df.reindex(moex_calendar)
 
     # Forward-fill only carries last observed values to later dates and is used
     # to align infrequent/non-trading days before common-window trimming.
@@ -402,7 +401,6 @@ def run(
     rebalances = int(backtest.attrs.get("rebalances", 0))
 
     save_plots(corr, link, list(corr.index), ordered_assets, weights, out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
     weights_table = pd.DataFrame({"asset": weights.index, "weight": weights.values, "weight_pct": weights.values * 100})
     weights_table.to_csv(out_dir / "hrp_weights.csv", index=False)
     backtest.to_csv(out_dir / "backtest_timeseries.csv")
