@@ -21,7 +21,7 @@ def _normalize(weights: dict) -> dict:
 
 def equal_weight_clusters(
     clusters: dict,
-    prices: pd.DataFrame = None,
+    prices: pd.DataFrame = None,  # noqa: ARG001 – kept for API consistency with other allocators
 ) -> dict:
     """
     Assign equal weight to each cluster; equal weight within each cluster.
@@ -31,7 +31,7 @@ def equal_weight_clusters(
     clusters : dict
         Mapping {cluster_id: [tickers]}.
     prices : pd.DataFrame, optional
-        Not used; included for API consistency.
+        Unused; present for API consistency with other allocation functions.
 
     Returns
     -------
@@ -157,8 +157,7 @@ def risk_parity_clusters(
             break
         w = w_new
 
-    w = np.abs(w_new)  # clip any floating-point negatives to zero
-    w = np.maximum(w, 0.0)
+    w = np.maximum(w_new, 0.0)  # eliminate any floating-point negative residuals
     w /= w.sum() if w.sum() > 0 else 1.0
 
     cluster_weights = {cid: float(w[i]) for i, cid in enumerate(cluster_ids)}

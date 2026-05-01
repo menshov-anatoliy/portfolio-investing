@@ -18,7 +18,7 @@ dependencies = [
 ]
 
 [project.scripts]
-run-experiment = "portfolio_investing.scripts.run_experiment:main"
+run-experiment = "portfolio_investing.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
