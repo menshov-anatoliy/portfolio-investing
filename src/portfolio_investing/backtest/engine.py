@@ -150,8 +150,8 @@ class BacktestEngine:
 
             # Drift current weights by today's returns
             daily_ret = returns.loc[date]
-            asset_returns = {t: daily_ret.get(t, 0.0) for t in current_weights}
-            new_values = {t: current_weights[t] * (1 + np.expm1(asset_returns[t])) for t in current_weights}
+            growth = {t: np.exp(daily_ret.get(t, 0.0)) for t in current_weights}
+            new_values = {t: current_weights[t] * growth[t] for t in current_weights}
             total = sum(new_values.values())
             if total > 0:
                 current_weights = {t: v / total for t, v in new_values.items()}

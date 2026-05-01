@@ -151,13 +151,14 @@ def risk_parity_clusters(
         sigma_p = np.sqrt(w @ cov @ w)
         mrc = cov @ w / (sigma_p + _EPS)
         rc = w * mrc
-        w_new = w * (1.0 / (n * rc + _EPS))
-        w_new /= w_new.sum()
-        if np.max(np.abs(w_new - w)) < 1e-8:
+        w_next = w * (1.0 / (n * rc + _EPS))
+        w_next /= w_next.sum()
+        if np.max(np.abs(w_next - w)) < 1e-8:
+            w = w_next
             break
-        w = w_new
+        w = w_next
 
-    w = np.maximum(w_new, 0.0)  # eliminate any floating-point negative residuals
+    w = np.maximum(w, 0.0)  # eliminate any floating-point negative residuals
     w /= w.sum() if w.sum() > 0 else 1.0
 
     cluster_weights = {cid: float(w[i]) for i, cid in enumerate(cluster_ids)}
