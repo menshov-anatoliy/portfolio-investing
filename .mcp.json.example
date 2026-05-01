@@ -1,0 +1,42 @@
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "<path-to-repo>"
+      ],
+      "description": "Позволяет ИИ создавать файлы проекта (скрипты, CSV, графики) прямо на вашем диске. Замените <path-to-repo> на абсолютный путь к репозиторию на вашем компьютере."
+    },
+    "fetch": {
+      "command": "uvx",
+      "args": [
+        "mcp-server-fetch"
+      ],
+      "description": "Позволяет ИИ загружать актуальную документацию библиотек (PyPortfolioOpt, Riskfolio-Lib) и делать HTTP-запросы к финансовым API."
+    },
+    "brave-search": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-brave-search"
+      ],
+      "env": {
+        "BRAVE_API_KEY": "<your-brave-api-key>"
+      },
+      "description": "Позволяет ИИ искать свежие научные статьи (SSRN) об алгоритме HRP и актуальные тикеры ETF. Замените <your-brave-api-key> на ваш ключ с https://brave.com/search/api/"
+    },
+    "jupyter": {
+      "command": "uvx",
+      "args": [
+        "mcp-server-jupyter"
+      ],
+      "env": {
+        "JUPYTER_BASE_URL": "http://localhost:8888",
+        "JUPYTER_TOKEN": "<your-jupyter-token>"
+      },
+      "description": "Позволяет ИИ исполнять Python-код в Jupyter Notebook: строить матрицы корреляций, рисовать дендрограммы HRP, тестировать стратегии на лету. Запустите Jupyter командой: jupyter notebook --NotebookApp.token=<your-jupyter-token>"
+    }
+  }
+}
