@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import math
 import warnings
 from dataclasses import dataclass
 from datetime import date
@@ -95,7 +94,7 @@ def fetch_moex_history(instr: MoexInstrument, start_date: str, end_date: str) ->
             )
             response.raise_for_status()
         except requests.RequestException as exc:
-            warnings.warn(f"MOEX request failed for {instr.name}: {exc}", stacklevel=1)
+            warnings.warn(f"MOEX request failed for {instr.name}: {exc}", stacklevel=2)
             return pd.Series(dtype=float, name=instr.name)
         payload = response.json()
         block = payload.get("history", {})
@@ -132,7 +131,7 @@ def fetch_crypto_history(ticker: str, start_date: str, end_date: str) -> pd.Seri
             interval="1d",
         )
     except Exception as exc:  # pragma: no cover
-        warnings.warn(f"yfinance request failed for {ticker}: {exc}", stacklevel=1)
+        warnings.warn(f"yfinance request failed for {ticker}: {exc}", stacklevel=2)
         return pd.Series(dtype=float, name=ticker)
     if hist.empty:
         return pd.Series(dtype=float, name=ticker)
@@ -216,7 +215,7 @@ def build_price_matrix(start_date: str, end_date: str) -> pd.DataFrame:
     for instr in MOEX_SHARES + MOEX_FUNDS_BONDS:
         s = fetch_moex_history(instr, start_date, end_date)
         if s.empty:
-            warnings.warn(f"MOEX instrument has no data: {instr.name} ({instr.secid})", stacklevel=1)
+            warnings.warn(f"MOEX instrument has no data: {instr.name} ({instr.secid})", stacklevel=2)
             continue
         moex_series[instr.name] = s
 
@@ -233,7 +232,7 @@ def build_price_matrix(start_date: str, end_date: str) -> pd.DataFrame:
     for ticker in CRYPTO_TICKERS:
         s = fetch_crypto_history(ticker, start_date, end_date)
         if s.empty:
-            warnings.warn(f"Crypto ticker has no data: {ticker}", stacklevel=1)
+            warnings.warn(f"Crypto ticker has no data: {ticker}", stacklevel=2)
             continue
         crypto_series[ticker] = s
 
@@ -270,7 +269,7 @@ def warn_short_history(prices: pd.DataFrame, min_days: int = 126) -> List[str]:
             warnings.warn(
                 f"Asset {col} has only {obs} observations (<{min_days}). "
                 f"Consider excluding it or trimming all assets to its start date.",
-                stacklevel=1,
+                stacklevel=2,
             )
     return short_assets
 
@@ -374,7 +373,7 @@ def run(
 
     backtest = run_backtest(prices, weights, threshold=rebalance_threshold)
     total_return = backtest["portfolio_value"].iloc[-1] - 1.0
-    rebalances = int(backtest.attrs.get("rebalances", math.nan))
+    rebalances = int(backtest.attrs.get("rebalances", 0))
 
     save_plots(corr, link, list(corr.index), ordered_assets, weights, out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
