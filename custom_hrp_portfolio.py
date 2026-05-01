@@ -4,17 +4,23 @@ import argparse
 import math
 import warnings
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date
 from pathlib import Path
 from typing import Dict, Iterable, List, Tuple
 
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import requests
-import seaborn as sns
-from scipy.cluster.hierarchy import dendrogram, linkage
-from scipy.spatial.distance import squareform
+try:
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+except ImportError as exc:  # pragma: no cover
+    raise ImportError("matplotlib and seaborn are required. Install with: pip install matplotlib seaborn") from exc
+try:
+    from scipy.cluster.hierarchy import dendrogram, linkage
+    from scipy.spatial.distance import squareform
+except ImportError as exc:  # pragma: no cover
+    raise ImportError("scipy is required. Install with: pip install scipy") from exc
 
 try:
     import yfinance as yf
@@ -289,6 +295,7 @@ def run_backtest(prices: pd.DataFrame, target_weights: pd.Series, threshold: flo
 def save_plots(
     corr: pd.DataFrame,
     link: np.ndarray,
+    labels: List[str],
     ordered_assets: List[str],
     weights: pd.Series,
     out_dir: Path,
@@ -303,7 +310,7 @@ def save_plots(
     plt.close()
 
     plt.figure(figsize=(12, 6))
-    dendrogram(link, labels=ordered_assets, leaf_rotation=90)
+    dendrogram(link, labels=labels, leaf_rotation=90)
     plt.title("HRP Dendrogram")
     plt.tight_layout()
     plt.savefig(out_dir / "dendrogram.png", dpi=150)
@@ -339,7 +346,9 @@ def run(
 
     print("\n=== Data loading and synchronization ===")
     prices = build_price_matrix(start_date, end_date)
-    warn_short_history(prices[["ZAYM", "RENT"]].dropna(how="all"), min_days=126)
+    short_check_assets = [a for a in ["ZAYM", "RENT"] if a in prices.columns]
+    if short_check_assets:
+        warn_short_history(prices[short_check_assets].dropna(how="all"), min_days=126)
     prices = determine_common_window(prices)
     print(f"Common synchronized window: {prices.index.min().date()} .. {prices.index.max().date()}")
     print(f"Assets used ({len(prices.columns)}): {', '.join(prices.columns)}")
@@ -357,7 +366,7 @@ def run(
     total_return = backtest["portfolio_value"].iloc[-1] - 1.0
     rebalances = int(backtest.attrs.get("rebalances", math.nan))
 
-    save_plots(corr, link, ordered_assets, weights, out_dir)
+    save_plots(corr, link, list(corr.index), ordered_assets, weights, out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     weights_table = pd.DataFrame({"asset": weights.index, "weight": weights.values, "weight_pct": weights.values * 100})
     weights_table.to_csv(out_dir / "hrp_weights.csv", index=False)
