@@ -29,6 +29,7 @@ except ImportError as exc:  # pragma: no cover
 
 MOEX_BASE = "https://iss.moex.com/iss"
 HISTORY_PAGE_SIZE = 100
+MAX_CAP_ITERATIONS = 20
 
 
 @dataclass(frozen=True)
@@ -61,7 +62,7 @@ MOEX_FUNDS_BONDS: List[MoexInstrument] = [
     MoexInstrument("RENT", "TQIF", "shares", alias="RENT"),
 ]
 
-CRYPTO_TICKERS = ["BTC-USD", "TAO-USD", "ETH-USD", "USDT-USD"]
+CRYPTO_MARKET_TICKERS = ["BTC-USD", "TAO-USD", "ETH-USD", "USDT-USD"]
 SEARCH_QUERIES = ["ПАРУС", "Рентал ПРО", "ДОМ.РФ"]
 
 
@@ -145,7 +146,7 @@ def fetch_crypto_history(ticker: str, start_date: str, end_date: str) -> pd.Seri
 
 def cap_weights(weights: pd.Series, max_weight: float) -> pd.Series:
     w = weights.copy().astype(float)
-    for _ in range(20):
+    for _ in range(MAX_CAP_ITERATIONS):
         above = w[w > max_weight]
         if above.empty:
             break
@@ -160,6 +161,7 @@ def cap_weights(weights: pd.Series, max_weight: float) -> pd.Series:
 
 
 def correl_dist(corr: pd.DataFrame) -> pd.DataFrame:
+    # HRP angular distance transform: d(i,j) = sqrt((1-rho(i,j))/2).
     corr = corr.clip(-1, 1)
     dist = np.sqrt(0.5 * (1 - corr))
     np.fill_diagonal(dist.values, 0.0)
@@ -190,6 +192,13 @@ def get_cluster_var(cov: pd.DataFrame, items: List[str]) -> float:
     return float(w.T @ cov_.values @ w)
 
 
+def split_cluster_once(cluster: List[str]) -> List[List[str]]:
+    if len(cluster) <= 1:
+        return []
+    mid = len(cluster) // 2
+    return [cluster[:mid], cluster[mid:]]
+
+
 def hrp_allocation(cov: pd.DataFrame, corr: pd.DataFrame, method: str = "ward") -> Tuple[pd.Series, np.ndarray, List[str]]:
     dist = correl_dist(corr)
     condensed = squareform(dist.values, checks=False)
@@ -199,7 +208,10 @@ def hrp_allocation(cov: pd.DataFrame, corr: pd.DataFrame, method: str = "ward") 
     weights = pd.Series(1.0, index=ordered_assets)
     clusters = [ordered_assets]
     while clusters:
-        clusters = [cluster[j:k] for cluster in clusters for j, k in ((0, len(cluster) // 2), (len(cluster) // 2, len(cluster))) if len(cluster) > 1]
+        next_clusters: List[List[str]] = []
+        for cluster in clusters:
+            next_clusters.extend(split_cluster_once(cluster))
+        clusters = next_clusters
         for i in range(0, len(clusters), 2):
             c0, c1 = clusters[i], clusters[i + 1]
             var0 = get_cluster_var(cov, c0)
@@ -229,7 +241,7 @@ def build_price_matrix(start_date: str, end_date: str) -> pd.DataFrame:
     moex_calendar = moex_df.index.unique().sort_values()
 
     crypto_series: Dict[str, pd.Series] = {}
-    for ticker in CRYPTO_TICKERS:
+    for ticker in CRYPTO_MARKET_TICKERS:
         s = fetch_crypto_history(ticker, start_date, end_date)
         if s.empty:
             warnings.warn(f"Crypto ticker has no data: {ticker}", stacklevel=2)
