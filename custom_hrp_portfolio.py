@@ -253,8 +253,12 @@ def build_price_matrix(start_date: str, end_date: str) -> pd.DataFrame:
 
     crypto_df = pd.concat(crypto_series.values(), axis=1).sort_index()
     crypto_df.columns = list(crypto_series.keys())
+    # Reindex crypto to MOEX dates and forward-fill with last known crypto close
+    # from prior calendar dates (no future data usage).
     crypto_on_moex = crypto_df.reindex(moex_calendar).ffill()
 
+    # Forward-fill only carries last observed values to later dates and is used
+    # to align infrequent/non-trading days before common-window trimming.
     full_df = pd.concat([moex_df, crypto_on_moex], axis=1).sort_index().ffill()
     return full_df
 
@@ -287,8 +291,17 @@ def warn_short_history(prices: pd.DataFrame, min_days: int = 126) -> List[str]:
 
 
 def run_backtest(prices: pd.DataFrame, target_weights: pd.Series, threshold: float = 0.10) -> pd.DataFrame:
-    returns = prices.pct_change().fillna(0.0)
     assets = target_weights.index.tolist()
+    returns = prices[assets].pct_change()
+    if returns.empty:
+        return pd.DataFrame(columns=["portfolio_value", "rebalanced"])
+    returns.iloc[0] = 0.0
+    if returns.iloc[1:].isna().any().any():
+        warnings.warn(
+            "NaN returns detected after the first row; applying forward-fill before backtest.",
+            stacklevel=2,
+        )
+    returns = returns.ffill().fillna(0.0)
     portfolio_value = 1.0
     holdings = target_weights * portfolio_value
     rows: List[Dict[str, float]] = []
@@ -374,6 +387,7 @@ def run(
     print(f"Common synchronized window: {prices.index.min().date()} .. {prices.index.max().date()}")
     print(f"Assets used ({len(prices.columns)}): {', '.join(prices.columns)}")
 
+    # HRP covariance is estimated on fully synchronous observations only.
     log_returns = np.log(prices / prices.shift(1)).dropna(how="any")
     corr = log_returns.corr()
     cov = log_returns.cov()
