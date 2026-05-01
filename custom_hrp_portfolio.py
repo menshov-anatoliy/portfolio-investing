@@ -5,7 +5,7 @@ import warnings
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from typing import Dict, Iterable, List, Tuple
+from typing import Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
@@ -30,6 +30,8 @@ except ImportError as exc:  # pragma: no cover
 MOEX_BASE = "https://iss.moex.com/iss"
 HISTORY_PAGE_SIZE = 100
 MAX_CAP_ITERATIONS = 20
+MIN_HISTORY_DAYS = 126
+BOARD_TO_MARKET = {"TQBR": "shares", "TQIF": "shares", "TQCB": "bonds"}
 
 
 @dataclass(frozen=True)
@@ -64,6 +66,10 @@ MOEX_FUNDS_BONDS: List[MoexInstrument] = [
 
 CRYPTO_MARKET_TICKERS = ["BTC-USD", "TAO-USD", "ETH-USD", "USDT-USD"]
 SEARCH_QUERIES = ["ПАРУС", "Рентал ПРО", "ДОМ.РФ"]
+AUTO_TICKER_RULES = {
+    "PARUS-LOG": {"query": "ПАРУС", "preferred_boards": ["TQIF", "TQCB"]},
+    "RENT": {"query": "Рентал ПРО", "preferred_boards": ["TQIF", "TQBR"]},
+}
 
 
 def search_moex_securities(query: str, limit: int = 10) -> pd.DataFrame:
@@ -75,6 +81,53 @@ def search_moex_securities(query: str, limit: int = 10) -> pd.DataFrame:
     columns = sec.get("columns", [])
     data = sec.get("data", [])[:limit]
     return pd.DataFrame(data, columns=columns)
+
+
+def get_row_board(row: pd.Series) -> str | None:
+    for col in ("PRIMARY_BOARDID", "BOARDID"):
+        value = row.get(col)
+        if isinstance(value, str) and value:
+            return value
+    return None
+
+
+def choose_best_match(df: pd.DataFrame, preferred_boards: List[str]) -> Tuple[str, str] | None:
+    if df.empty or "SECID" not in df.columns:
+        return None
+    candidates = df.copy()
+    candidates["_BOARD"] = candidates.apply(get_row_board, axis=1)
+    candidates = candidates[candidates["SECID"].notna() & candidates["_BOARD"].notna()]
+    if candidates.empty:
+        return None
+    preferred = candidates[candidates["_BOARD"].isin(preferred_boards)]
+    best = preferred.iloc[0] if not preferred.empty else candidates.iloc[0]
+    return str(best["SECID"]), str(best["_BOARD"])
+
+
+def apply_auto_ticker_substitution(
+    instruments: List[MoexInstrument],
+    search_results: Dict[str, pd.DataFrame],
+) -> Tuple[List[MoexInstrument], List[str]]:
+    resolved: List[MoexInstrument] = []
+    messages: List[str] = []
+    for instr in instruments:
+        rule = AUTO_TICKER_RULES.get(instr.name)
+        if not rule:
+            resolved.append(instr)
+            continue
+        query = rule["query"]
+        match = choose_best_match(search_results.get(query, pd.DataFrame()), rule["preferred_boards"])
+        if not match:
+            resolved.append(instr)
+            continue
+        secid, board = match
+        market = BOARD_TO_MARKET.get(board, instr.market)
+        if secid != instr.secid or board != instr.board or market != instr.market:
+            messages.append(f"{instr.name}: {instr.secid}/{instr.board} -> {secid}/{board}")
+            resolved.append(MoexInstrument(secid=secid, board=board, market=market, alias=instr.alias))
+        else:
+            resolved.append(instr)
+    return resolved, messages
 
 
 def fetch_moex_history(instr: MoexInstrument, start_date: str, end_date: str) -> pd.Series:
@@ -222,9 +275,14 @@ def hrp_allocation(cov: pd.DataFrame, corr: pd.DataFrame, method: str = "ward") 
     return weights / weights.sum(), link, ordered_assets
 
 
-def build_price_matrix(start_date: str, end_date: str) -> pd.DataFrame:
+def build_price_matrix(
+    start_date: str,
+    end_date: str,
+    moex_instruments: List[MoexInstrument] | None = None,
+) -> pd.DataFrame:
+    instruments = moex_instruments or (MOEX_SHARES + MOEX_FUNDS_BONDS)
     moex_series: Dict[str, pd.Series] = {}
-    for instr in MOEX_SHARES + MOEX_FUNDS_BONDS:
+    for instr in instruments:
         s = fetch_moex_history(instr, start_date, end_date)
         if s.empty:
             warnings.warn(f"MOEX instrument has no data: {instr.name} ({instr.secid})", stacklevel=2)
@@ -287,6 +345,16 @@ def warn_short_history(prices: pd.DataFrame, min_days: int = 126) -> List[str]:
                 stacklevel=2,
             )
     return short_assets
+
+
+def exclude_short_history_assets(prices: pd.DataFrame, min_days: int) -> Tuple[pd.DataFrame, List[str]]:
+    short_assets = warn_short_history(prices, min_days=min_days)
+    if not short_assets:
+        return prices, []
+    filtered = prices.drop(columns=short_assets, errors="ignore")
+    if filtered.shape[1] < 2:
+        raise RuntimeError("Too few assets remain after excluding short-history instruments.")
+    return filtered, short_assets
 
 
 def run_backtest(prices: pd.DataFrame, target_weights: pd.Series, threshold: float = 0.10) -> pd.DataFrame:
@@ -363,11 +431,14 @@ def run(
     out_dir: Path,
     max_weight: float = 0.15,
     rebalance_threshold: float = 0.10,
+    min_history_days: int = MIN_HISTORY_DAYS,
 ) -> None:
     print("=== MOEX ticker discovery ===")
+    search_results: Dict[str, pd.DataFrame] = {}
     for query in SEARCH_QUERIES:
         try:
             df = search_moex_securities(query)
+            search_results[query] = df
             print(f"\nQuery: {query}")
             if df.empty:
                 print("  No matches")
@@ -377,11 +448,17 @@ def run(
         except Exception as exc:  # pragma: no cover
             print(f"  Search failed for '{query}': {exc}")
 
+    dynamic_funds, substitutions = apply_auto_ticker_substitution(MOEX_FUNDS_BONDS, search_results)
+    if substitutions:
+        print("\n=== Auto-substituted MOEX tickers ===")
+        for msg in substitutions:
+            print(f"  {msg}")
+
     print("\n=== Data loading and synchronization ===")
-    prices = build_price_matrix(start_date, end_date)
-    short_check_assets = [a for a in ["ZAYM", "RENT"] if a in prices.columns]
-    if short_check_assets:
-        warn_short_history(prices[short_check_assets].dropna(how="all"), min_days=126)
+    prices = build_price_matrix(start_date, end_date, moex_instruments=MOEX_SHARES + dynamic_funds)
+    prices, excluded_assets = exclude_short_history_assets(prices, min_days=min_history_days)
+    if excluded_assets:
+        print(f"Excluded due to short history (<{min_history_days} obs): {', '.join(excluded_assets)}")
     prices = determine_common_window(prices)
     print(f"Common synchronized window: {prices.index.min().date()} .. {prices.index.max().date()}")
     print(f"Assets used ({len(prices.columns)}): {', '.join(prices.columns)}")
@@ -424,6 +501,12 @@ def parse_args() -> argparse.Namespace:
         default=0.10,
         help="Absolute drift threshold for rebalancing trigger",
     )
+    parser.add_argument(
+        "--min-history-days",
+        type=int,
+        default=MIN_HISTORY_DAYS,
+        help="Exclude assets with fewer observations than this threshold",
+    )
     return parser.parse_args()
 
 
@@ -435,4 +518,5 @@ if __name__ == "__main__":
         out_dir=Path(args.out_dir),
         max_weight=args.max_weight,
         rebalance_threshold=args.rebalance_threshold,
+        min_history_days=args.min_history_days,
     )
